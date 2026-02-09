@@ -1,0 +1,9 @@
+{
+  "rules": {
+    "marine_environment_data": {
+      ".indexOn": ["timestamp"],
+      ".read": true,
+      ".write": true
+    }
+  }
+}

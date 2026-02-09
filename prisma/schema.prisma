@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model marine_environment_data {
+  id             String   @id @default(uuid())
+  wave_direction Float
+  wave_height    Float
+  wind_direction Float
+  wind_speed     Float
+  createdAt      DateTime @default(now())
+}

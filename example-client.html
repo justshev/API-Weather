@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marine Data Monitor - Real-time</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .status {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .status.connected {
+            border-left: 5px solid #10b981;
+        }
+
+        .status.disconnected {
+            border-left: 5px solid #ef4444;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .controls h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e5e7eb;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .data-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .data-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .data-row:last-child {
+            border-bottom: none;
+        }
+
+        .data-label {
+            color: #6b7280;
+            font-weight: 500;
+        }
+
+        .data-value {
+            color: #111827;
+            font-weight: 600;
+        }
+
+        .timestamp {
+            color: #9ca3af;
+            font-size: 0.9em;
+            margin-top: 10px;
+            text-align: right;
+        }
+
+        .empty-state {
+            background: white;
+            padding: 60px 20px;
+            border-radius: 10px;
+            text-align: center;
+            color: #6b7280;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌊 Marine Environment Monitor</h1>
+        
+        <div class="status disconnected" id="status">
+            <strong>Status:</strong> <span id="statusText">Connecting...</span>
+        </div>
+
+        <div class="controls">
+            <h2>📊 Tambah Data Baru</h2>
+            <form id="dataForm">
+                <div class="form-group">
+                    <label for="waveHeight">Tinggi Gelombang (m)</label>
+                    <input type="number" step="0.1" id="waveHeight" required>
+                </div>
+                <div class="form-group">
+                    <label for="waveDirection">Arah Gelombang (derajat)</label>
+                    <input type="number" id="waveDirection" min="0" max="360" required>
+                </div>
+                <div class="form-group">
+                    <label for="windSpeed">Kecepatan Angin (m/s)</label>
+                    <input type="number" step="0.1" id="windSpeed" required>
+                </div>
+                <div class="form-group">
+                    <label for="windDirection">Arah Angin (derajat)</label>
+                    <input type="number" id="windDirection" min="0" max="360" required>
+                </div>
+                <button type="submit">Kirim Data</button>
+            </form>
+        </div>
+
+        <div id="dataContainer">
+            <div class="empty-state">
+                <p>Menunggu data...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api/marine';
+        let eventSource = null;
+
+        // Format timestamp
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            
+            let date;
+            if (timestamp.seconds) {
+                date = new Date(timestamp.seconds * 1000);
+            } else {
+                date = new Date(timestamp);
+            }
+            
+            return date.toLocaleString('id-ID', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        // Render data cards
+        function renderData(data) {
+            const container = document.getElementById('dataContainer');
+            
+            if (!data || data.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <p>Belum ada data</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = '<div class="data-grid">' + 
+                data.map(item => `
+                    <div class="data-card">
+                        <h3>Data ${item.id}</h3>
+                        <div class="data-row">
+                            <span class="data-label">Tinggi Gelombang</span>
+                            <span class="data-value">${item.wave_height} m</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Arah Gelombang</span>
+                            <span class="data-value">${item.wave_direction}°</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Kecepatan Angin</span>
+                            <span class="data-value">${item.wind_speed} m/s</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Arah Angin</span>
+                            <span class="data-value">${item.wind_direction}°</span>
+                        </div>
+                        <div class="timestamp">${formatTimestamp(item.timestamp)}</div>
+                    </div>
+                `).join('') +
+                '</div>';
+        }
+
+        // Update status
+        function updateStatus(connected) {
+            const statusDiv = document.getElementById('status');
+            const statusText = document.getElementById('statusText');
+            
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusText.textContent = 'Connected - Real-time updates aktif';
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusText.textContent = 'Disconnected - Mencoba reconnect...';
+            }
+        }
+
+        // Connect to real-time stream
+        function connectStream() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(`${API_URL}/stream`);
+            
+            eventSource.onopen = function() {
+                console.log('Connected to real-time stream');
+                updateStatus(true);
+            };
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Received data:', data);
+                    renderData(data);
+                } catch (error) {
+                    console.error('Error parsing data:', error);
+                }
+            };
+            
+            eventSource.onerror = function(error) {
+                console.error('EventSource error:', error);
+                updateStatus(false);
+                
+                // Reconnect after 3 seconds
+                setTimeout(() => {
+                    console.log('Attempting to reconnect...');
+                    connectStream();
+                }, 3000);
+            };
+        }
+
+        // Submit form
+        document.getElementById('dataForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const data = {
+                wave_height: parseFloat(document.getElementById('waveHeight').value),
+                wave_direction: parseInt(document.getElementById('waveDirection').value),
+                wind_speed: parseFloat(document.getElementById('windSpeed').value),
+                wind_direction: parseInt(document.getElementById('windDirection').value)
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/post`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('Data berhasil dikirim!');
+                    // Reset form
+                    e.target.reset();
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Error posting data:', error);
+                alert('Error mengirim data. Pastikan server sedang berjalan.');
+            }
+        });
+
+        // Start connection when page loads
+        connectStream();
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>
